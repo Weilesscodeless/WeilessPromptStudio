@@ -447,6 +447,13 @@ def api_enhance(req: EnhanceRequest):
         "system_prompt": system_prompt,
         "raw_output": clean_diag.get("raw", raw_text),
         "final": final,
+        # 清洗步骤必须记下来。
+        # 上一轮排查"模型是不是拒绝了"时，日志里只有 raw 和 final，
+        # 能看到原话消失了却看不出是谁删的，只能靠回去读代码才发现是
+        # 清洗器干的。有了这个字段，一眼就能看出是哪一步动的手。
+        "clean_steps": [
+            {"label": lbl, "removed": n} for lbl, n in clean_diag.get("steps", [])
+        ],
         "spans": spans,
         "stats": stats,
         "warnings": warnings,

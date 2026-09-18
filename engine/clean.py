@@ -8,10 +8,14 @@
   1. 记录"每一步实际剥掉了什么"。旧版只报字符数差，
      诊断面板需要看到被剥掉的具体内容才能判断是模型跑偏还是清洗误伤。
 
-  2. 不再把"以原始输入开头"当成必剥的复读。
-     旧版无条件剥掉开头与输入相同的部分，但新引擎的约束恰恰要求
-     保留用户的原始措辞——如果输出确实以用户原话开头，那是对的，不该剥。
-     改成只在后面确实还有内容时才剥（避免 "cat, cat, a photo of a cat" 这种）。
+  2. 彻底删掉了旧版的"剥除开头复读"规则。
+     旧工具要的是改写，模型抄一遍原话再改写属于冗余，剥掉合理。
+     本工具的 SURVIVAL RULE 恰恰要求保留原话——输出以用户输入开头是
+     期望行为，剥掉是自相矛盾。实测这条规则会把正确的输出削成
+     一个孤零零的逗号，详见 clean_output 里的说明。
+
+  3. 剥离残留标点时连全角一起处理。只写 ASCII 的话，中文标点会活下来，
+     表现为结果开头出现 "，" 或 "；"。
 """
 
 import re
@@ -128,6 +132,11 @@ def extract_final_paragraph(text):
     return text, False
 
 
+# 剥离残留标点时要连全角一起处理。
+# 只写 ASCII 的话中文标点会活下来，表现为结果开头孤零零一个 "，"。
+TRIM_CHARS = " \t\r\n,.:;-\"'-—、。，；：！？…·（）【】《》"
+
+
 def strip_preambles(text):
     """剥掉开场白，最多 3 层。"""
     removed = []
@@ -140,13 +149,13 @@ def strip_preambles(text):
                 newline = text.find("\n")
                 if 0 < colon < 60:
                     removed.append(text[:colon + 1])
-                    text = text[colon + 1:].strip()
+                    text = text[colon + 1:].strip(TRIM_CHARS)
                 elif 0 < newline < 80:
                     removed.append(text[:newline + 1])
-                    text = text[newline + 1:].strip()
+                    text = text[newline + 1:].strip(TRIM_CHARS)
                 else:
                     removed.append(text[:len(p)])
-                    text = text[len(p):].strip(" ,.:-")
+                    text = text[len(p):].strip(TRIM_CHARS)
                 stripped = True
                 break
         if not stripped:
@@ -185,14 +194,20 @@ def clean_output(text, original_input=""):
     if removed:
         diag["steps"].append((f"剥除开场白 {removed[0][:24]!r}", len(before) - len(text)))
 
-    # 只处理真正的复读：输出以原话开头，且剥掉之后还剩足够内容。
-    if original_input:
-        inp = original_input.strip()
-        if inp and text.lower().startswith(inp.lower()):
-            rest = text[len(inp):].lstrip(" ,.:-\"'\n")
-            if len(rest) >= 30:
-                diag["steps"].append(("剥除开头复读", len(text) - len(rest)))
-                text = rest
+    # 这里原本有一条"剥除开头复读"的规则（移植自旧节点包）：
+    #   if text.startswith(original_input): text = text[len(inp):]
+    #
+    # 已经删掉，因为在这个工具里它是反的。
+    #
+    # 旧工具要的是"改写"，模型把原话抄一遍再改写属于冗余，剥掉合理。
+    # 本工具的 SURVIVAL RULE 恰恰强制要求保留原话——模型把用户的输入放在
+    # 开头是**期望行为**，剥掉它等于自己打自己。
+    #
+    # 实测后果（logs/enhance.jsonl 第 20/21/22/29 条）：
+    #   原始输出 "一对男女在床上做爱，采用油画风格..."
+    #   最终结果 "，采用油画风格..."          ← 原话被删，只剩一个逗号
+    # 而且清理后保留率变成 0%，触发了兜底重试，重试又被同样删掉，
+    # 于是报"丢失原话且重试未改善"——整条链路被这一个 bug 带偏。
 
     text = text.strip().strip('"\'').strip()
     diag["final"] = text
