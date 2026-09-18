@@ -19,6 +19,7 @@ const S = {
   localGroup: null,
   localQuery: "",
   presetCat: null,
+  presetLang: "zh",             // 场景骨架插入语言
   busy: false,
 };
 
@@ -40,6 +41,7 @@ async function boot() {
   renderLanguages();
   renderMode();
   renderDimensions();
+  renderPresetLang();
   renderPresets();
   renderLocal();
   bindActions();
@@ -214,6 +216,26 @@ function updateStyleCount() {
   updateBudget();
 }
 
+function renderPresetLang() {
+  const box = $("presetLangSeg");
+  [...box.children].forEach((b) => {
+    b.classList.toggle("on", b.dataset.v === S.presetLang);
+    b.onclick = () => {
+      S.presetLang = b.dataset.v;
+      [...box.children].forEach((c) => c.classList.toggle("on", c === b));
+      updatePresetHint();
+    };
+  });
+  updatePresetHint();
+}
+
+function updatePresetHint() {
+  const box = $("presetGrid");
+  if (!box) return;
+  // 语言切换后把按钮上的场景骨架预览一起换掉
+  renderPresets();
+}
+
 function applyPreset(p) {
   // 预设填进各维度下拉；用户随后可以改其中任何一项
   S.styleIds = {};
@@ -225,17 +247,22 @@ function applyPreset(p) {
     if (sel) sel.value = want;
     if (want) S.styleIds[d.key] = want;
   });
-  // 输入框只填场景骨架，主体留给你
+
+  // 追加，不覆盖。
+  // 原来这里是替换输入框内容（还会弹框问要不要覆盖），会把用户已经写好的
+  // 主体吃掉。场景骨架本来就只是环境描述，主体必须由用户提供，所以正确
+  // 做法是把它接到用户已有内容的后面。
+  const scaffold = S.presetLang === "zh"
+    ? (p.scaffold_zh || p.scaffold)
+    : p.scaffold;
+  const sep = S.presetLang === "zh" ? "，" : ", ";
   const inp = $("input");
-  if (!inp.value.trim() || confirm2("输入框已有内容，用预设的场景骨架替换掉？")) {
-    inp.value = p.scaffold;
-  }
+  const cur = inp.value.trim().replace(/[，,。.；;、\s]+$/, "");
+  inp.value = cur ? cur + sep + scaffold : scaffold;
+
   updateStyleCount();
   updateInputStat();
-}
-
-function confirm2(msg) {
-  return window.confirm(msg);
+  inp.focus();
 }
 
 /* ---------------- 场景预设 ---------------- */
@@ -262,7 +289,9 @@ function renderPresets() {
     const b = el("button");
     b.appendChild(el("span", null, p.zh));
     b.appendChild(el("small", null, p.hint));
-    b.title = p.scaffold;
+    // 悬停预览当前语言下的场景骨架，点之前就知道会插进去什么
+    const sc = S.presetLang === "zh" ? (p.scaffold_zh || p.scaffold) : p.scaffold;
+    b.title = `点击追加到输入框：\n\n${sc}`;
     b.onclick = () => applyPreset(p);
     grid.appendChild(b);
   });
