@@ -245,17 +245,29 @@ Return a JSON object with exactly these keys:
   "subject"     — the main thing being depicted. Use the user's own wording.
   "action"      — what it is doing. Empty string if the user did not say.
   "environment" — where it is. Empty string if the user did not say.
-  "style"       — the style directives, verbatim, if any were supplied.
+  "style"       — every style word from the list at the bottom of this prompt,
+                  translated into the output language. Empty string if that list
+                  is absent.
 
 RULES:
 - If the user did not state a field, the value MUST be an empty string "".
   Do not guess. Do not fill it in to be helpful.
 - Do not add adjectives, objects, or details that are not in the user's message.
+- The style words describe HOW the image looks, not WHAT is depicted. Never
+  move subject matter into the "style" field.
 - Output the JSON object only. No markdown fence, no explanation."""
 
-_SLOT_MODE_STYLE = """Style directives to place in the "style" field:
+_SLOT_MODE_STYLE = """STYLE WORDS — put every one of these into the "style" field, \
+TRANSLATED into {lang_name}. Do not copy them in English:
 
 {items}"""
+
+# 目标语种是中文时的追加强调。
+# 通用规则模型遵守得时好时坏（实测同一输入同一参数，有时翻译有时照抄英文），
+# 所以在列表下面再钉一句，把失败模式直接点名。
+_SLOT_STYLE_ZH_HARD = """The style words above are English text. Your "style" field \
+must contain Chinese words with the same meaning. An output whose "style" field is \
+English is WRONG."""
 
 # 翻译场景专用。只写 "Write in English" 不够——模型会把中文原样留着
 # 再补几句英文，结果送进只认英文的编码器还是噪声。必须点明"不要保留
@@ -266,6 +278,32 @@ Translate the MEANING of the user's message into English. Do NOT leave any \
 non-English characters in your output — not the user's original words, not \
 names, nothing. The style words listed below are already English; use them as \
 written. Every concept from the user's message must survive the translation."""
+
+# 跟随输入语种时的规则。
+#
+# 不能只写 "use the same language as the user"。实测：风格词全是英文，用户
+# 的中文输入又短，英文风格词在提示词里占压倒性比重，模型会整个漂成英文
+# ——输入"一对男女在做爱"配几个英文风格词，输出会是
+# "establishing wide shot ... a couple making love under ..."。
+# 所以必须点破：风格词是英文，不代表输出要用英文。
+_LANG_ZH = """LANGUAGE — your entire output must be in Chinese:
+
+The user wrote in Chinese, so EVERY word of your output must be Chinese, \
+including the parts that describe style. The style words listed below happen \
+to be written in English — translate their meaning into Chinese as you weave \
+them in. Do NOT switch to English just because those words are English. \
+The style words are not the content; they do not set the language."""
+
+_LANG_EN = """LANGUAGE — your entire output must be in English:
+
+Write every word in English. If the user wrote in another language, translate \
+their meaning rather than keeping their original wording."""
+
+_LANG_GENERIC = """LANGUAGE — match the user's language:
+
+Write your output in the same language as the user's message. The style words \
+listed below are in English for convenience; that does not mean your output \
+should be in English."""
 
 
 def _style_block(style_texts):
@@ -287,20 +325,40 @@ def build_system_prompt(mode, format_id, style_texts, strength,
     # 语言按编码器能力解析。选到只认英文的模型而输入是中文时，
     # 这里会转成强制英文 + 翻译指令——见 resolve_language 的说明。
     eff_lang, in_lang, translating = resolve_language(language, format_id, input_text)
-    lang_rule = LANGUAGES.get(eff_lang, LANGUAGES[DEFAULT_LANGUAGE])[1]
     if translating:
-        lang_rule = _TRANSLATE_RULE.format(src="Chinese" if in_lang == "zh" else "a mix of Chinese and English")
+        lang_rule = _TRANSLATE_RULE.format(
+            src="Chinese" if in_lang == "zh" else "a mix of Chinese and English")
+    elif eff_lang == "zh":
+        lang_rule = _LANG_ZH
+    elif eff_lang == "en":
+        lang_rule = _LANG_EN
+    elif in_lang == "zh":
+        lang_rule = _LANG_ZH
+    elif in_lang == "en":
+        lang_rule = _LANG_EN
+    else:
+        lang_rule = _LANG_GENERIC
 
     parts = []
 
     if mode == "slots":
-        # 槽位模式：模型只填 JSON，拼装交给程序，所以不需要长度和格式指令。
+        # 槽位模式不把格式指令给模型。
+        #
+        # 拼装由程序做，格式跟模型无关，给了没有收益；反而出过事：
+        # Pony 的格式指令里写着 "Begin with score tags: score_9, score_8_up,
+        # score_7_up..."，模型把它当成风格词抄进 style 字段，拼装时程序又
+        # 自动加一遍，最终输出里 score 标签出现两次。
         parts.append(_SLOT_MODE_RULES)
+        parts.append(lang_rule)          # 语言规则要显眼，排在风格列表前面
         if style_texts:
-            parts.append(_SLOT_MODE_STYLE.format(items="\n".join(
-                f"  - {t}" for t in style_texts)))
-        parts.append(f"STYLE DIRECTIVES:\n{f['inject']}")
-        parts.append(lang_rule)
+            want_zh = lang_rule in (_LANG_ZH, _TRANSLATE_RULE) or in_lang == "zh"
+            head = _SLOT_MODE_STYLE.format(
+                lang_name="Chinese" if want_zh else "English",
+                items="\n".join(f"  - {t}" for t in style_texts),
+            )
+            if want_zh:
+                head += "\n\n" + _SLOT_STYLE_ZH_HARD
+            parts.append(head)
     else:
         parts.append(_BASE_RULES.format(allowance=strength_cfg["allowance"]))
         # 用户的输入要原样引在风格列表之前。
@@ -355,11 +413,18 @@ def _assemble_prose(slots, style_texts):
         bits.append(act)
 
     if env:
-        lower = env.lower()
-        if lower.startswith(_ENV_PREPS):
-            bits.append(env)
-        else:
-            bits.append(f"in {env}")
+        # 环境词已经被主体或动作包含了就别重复拼。
+        # 实测模型会把"在沙发上睡觉"填进 action、把"沙发上"填进 environment，
+        # 拼出来就是「一只猫 在沙发上睡觉, 沙发上」。
+        head = " ".join(bits).lower()
+        if env.lower() not in head:
+            lower = env.lower()
+            # 中文环境词不能补英文介词。实测"沙发上"会被拼成 "in 沙发上"。
+            # 中文靠语序和"在/于"表达方位，不需要前置介词。
+            if lower.startswith(_ENV_PREPS) or _CJK_RE.search(env):
+                bits.append(env)
+            else:
+                bits.append(f"in {env}")
 
     body = ", ".join(b for b in bits if b)
     style = ", ".join(style_texts)
@@ -394,14 +459,24 @@ def assemble_from_slots(slots, format_id, style_texts, rating="rating_safe"):
     """把模型填的槽位拼成最终提示词。
 
     这里是程序侧拼装，不走模型，所以输出结构是确定的。
+
+    风格部分优先用模型填的 style 字段，而不是库里存的英文原文。
+    库里存的都是英文，直接用会让中文输出里混进一大段英文——实测槽位模式
+    下中文输入会拼出「一只猫 在沙发上睡觉, oil painting, visible impasto
+    brushwork...」这种半中半英。模型已经在 style 字段里按目标语言翻译好了，
+    用它的结果。只在它返回空时才回退到原文。
     """
     f = fmt_mod.get(format_id)
     family = f["family"]
+
+    model_style = (slots.get("style") or "").strip()
+    styles = [model_style] if model_style else list(style_texts or [])
+
     if family == "tags":
-        return _assemble_tags(slots, style_texts)
+        return _assemble_tags(slots, styles)
     if family == "booru":
-        return _assemble_booru(slots, style_texts, rating)
-    return _assemble_prose(slots, style_texts)
+        return _assemble_booru(slots, styles, rating)
+    return _assemble_prose(slots, styles)
 
 
 _SLOT_KEYS = ("subject", "action", "environment", "style")

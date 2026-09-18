@@ -372,6 +372,59 @@ def api_enhance(req: EnhanceRequest):
             # 槽位模式由程序拼装，不走模型，所以结构确定
             final = prompt_mod.assemble_from_slots(slots, req.format, style_texts)
             clean_diag = {"raw": raw_text, "steps": [("槽位拼装（未经模型）", 0)], "final": final}
+
+            # 兜底：期望中文但模型把风格词照抄成了英文时重试一次。
+            #
+            # 提示词里已经把翻译要求写得很死（连"style 字段是英文就是错的"
+            # 都写上了），但模型的遵守是概率性的——实测同一输入同一参数，
+            # 有时翻译有时照抄。所以程序侧再判一次，别让它偶尔漏过去。
+            want_zh = (req.language == "zh"
+                       or (req.language == "auto" and in_lang == "zh" and not translating))
+            if want_zh and prompt_mod.detect_language(final) != "zh":
+                retry_sys = system_prompt + (
+                    "\n\nREMINDER — your previous answer copied the style words in "
+                    "English and was wrong. The \"style\" field MUST contain Chinese "
+                    "words with the same meaning as the English list. "
+                    "Answer with the JSON object again, with the style field in Chinese."
+                )
+                raw_retry, llm_diag = ENGINE.generate(
+                    system_prompt=retry_sys, user_message=user_input,
+                    model_path=model_path, max_tokens=max_tokens,
+                    temperature=max(0.1, temperature - 0.3),
+                    top_p=CONFIG["top_p"], repeat_penalty=CONFIG["repeat_penalty"],
+                )
+                slots_retry = prompt_mod.parse_slots(raw_retry)
+                if slots_retry:
+                    final_retry = prompt_mod.assemble_from_slots(
+                        slots_retry, req.format, style_texts)
+                    if prompt_mod.detect_language(final_retry) == "zh":
+                        slots = slots_retry
+                        final = final_retry
+                        raw_text = raw_retry
+                        clean_diag = {"raw": raw_retry,
+                                      "steps": [("槽位拼装（重试后）", 0)],
+                                      "final": final}
+                    else:
+                        slots = None   # 触发下面的自由模式降级
+                        warnings.append("槽位模式两次都未能输出中文，已自动改用自由改写模式")
+                else:
+                    slots = None
+                    warnings.append("槽位模式未能输出中文，已自动改用自由改写模式")
+
+            # 槽位模式搞不定中文时降级到自由改写。
+            # 自由模式的语言约束实测稳定得多（3/3），降级比给用户一个
+            # 半英半中的结果要好。降级是显式的，会在界面上出警告。
+            if slots is None:
+                fb = prompt_mod.build_system_prompt(
+                    mode="free", format_id=req.format, style_texts=style_texts,
+                    strength=req.strength, input_text=user_input, language=req.language,
+                )
+                raw_text, llm_diag = ENGINE.generate(
+                    system_prompt=fb, user_message=user_input, model_path=model_path,
+                    max_tokens=max_tokens, temperature=temperature,
+                    top_p=CONFIG["top_p"], repeat_penalty=CONFIG["repeat_penalty"],
+                )
+                final, clean_diag = clean_output(raw_text, user_input)
     else:
         final, clean_diag = clean_output(raw_text, user_input)
 

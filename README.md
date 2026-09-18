@@ -342,3 +342,44 @@ CLIP 和 T5 都是在英文语料上训的，喂中文进去等于喂噪声。
 
 **如果你手动改了 `static/` 下的文件并想立刻看到效果**，仍然建议 Ctrl+F5
 硬刷新一次。后端重启不会让已经打开的标签页重新拉取资源。
+
+---
+
+## 为什么风格词会让输出变成英文
+
+这是一个反直觉的坑：**风格词库里全是英文，它们会把输出语言带跑。**
+
+最典型的例子（日志实测）：
+
+```
+输入:   一对男女在做爱            ← 中文，很短
+格式:   universal（编码器支持中文）
+风格:   photography, spotlight, wide, crimson_black, foreboding   ← 全是英文
+
+输出:   establishing wide shot, subject small in environment:
+        a couple making love under...                            ← 整个漂成英文
+```
+
+中文输入只有几个字，英文风格词在提示词里占压倒性比重，模型跟着漂过去了。
+一句干巴巴的 "Write your output in the same language as the user" 压不住。
+
+**现在的处理**：语言规则写具体，并直接点破这个坑——
+
+> The style words listed below happen to be written in English —
+> translate their meaning into Chinese as you weave them in.
+> Do NOT switch to English just because those words are English.
+
+槽位模式下还会在风格列表底下再钉一句（模型的遵守是概率性的）：
+
+> The style words above are English text. Your "style" field must contain
+> Chinese words with the same meaning. An output whose "style" field is
+> English is WRONG.
+
+**兜底**：槽位模式如果两次都判定成英文，**自动降级到自由改写**并在界面出警告，
+而不是把一个半英半中的结果丢给你。实测降级后 21/21 稳定。
+
+### 槽位模式不把格式指令给模型
+
+拼装由程序做，格式跟模型无关。之前给了反而出事——Pony 的格式指令里写着
+`Begin with score tags: score_9, score_8_up, score_7_up...`，模型把它当成
+风格词抄进 `style` 字段，拼装时程序又自动加一遍，输出里 score 标签出现两次。
