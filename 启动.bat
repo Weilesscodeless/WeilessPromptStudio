@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 echo.
-echo   Rebels Prompt Studio
+echo   Weiless Prompt Studio
 echo   ============================================
 echo.
 

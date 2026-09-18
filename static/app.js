@@ -1,4 +1,4 @@
-/* Rebels Prompt Studio 前端。零构建，原生 JS。 */
+/* Weiless Prompt Studio 前端。零构建，原生 JS。 */
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, txt) => {
@@ -75,11 +75,19 @@ function renderModels() {
     o.title = m.path;
     sel.appendChild(o);
   });
-  sel.onchange = () => applyStatus(S.meta.status);
+  sel.onchange = () => { refreshModelTitle(); applyStatus(S.meta.status); };
+  refreshModelTitle();
 }
 
 function currentModel() {
   return $("modelSelect").value;
+}
+
+// 下拉里模型名会被省略号截断，把完整路径挂到 title 上备查
+function refreshModelTitle() {
+  const sel = $("modelSelect");
+  const opt = sel.options[sel.selectedIndex];
+  sel.title = opt ? (opt.title || opt.textContent) : "";
 }
 
 async function refreshStatus() {

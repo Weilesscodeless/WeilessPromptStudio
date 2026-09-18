@@ -1,4 +1,4 @@
-# Rebels Prompt Studio
+# Weiless Prompt Studio
 
 独立的本地提示词增强器。不接入 ComfyUI，浏览器里用，模型跑在本地。
 
@@ -171,7 +171,7 @@ site-packages 里已有一个叫 `data` 的包，会抢在我们的目录前面�
 ## 目录结构
 
 ```
-RebelsPromptStudio/
+WeilessPromptStudio/
 ├── app.py                    FastAPI 后端 + 静态文件服务
 ├── config.json               模型目录、加载策略、采样参数
 ├── 启动.bat                  一键启动

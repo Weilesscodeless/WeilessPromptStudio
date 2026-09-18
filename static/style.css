@@ -30,12 +30,13 @@ body {
 /* ---------- 顶栏 ---------- */
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 16px; padding: 10px 18px;
+  flex-wrap: wrap;                 /* 窄窗口换行，别把右侧控件挤出可视区 */
+  gap: 10px 16px; padding: 10px 18px;
   background: var(--panel); border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 20;
 }
-.brand { display: flex; align-items: center; gap: 10px; }
-.brand h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand h1 { font-size: 15px; white-space: nowrap; margin: 0; font-weight: 600; letter-spacing: .3px; }
 .brand .sub { color: var(--dim2); font-size: 12px; }
 .dot {
   width: 9px; height: 9px; border-radius: 50%;
@@ -94,7 +95,10 @@ input[type=range] { flex: 1; accent-color: var(--accent); }
 .row.center { justify-content: center; margin-top: 6px; }
 .row.gap { gap: 6px; }
 .inline { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); }
-.inline select { width: auto; max-width: 300px; padding: 5px 8px; font-size: 12px; }
+.inline select {
+  width: auto; max-width: 230px; padding: 5px 8px; font-size: 12px;
+  text-overflow: ellipsis;   /* 模型名很长，别把后面控件顶出去 */
+}
 
 /* 分段按钮 */
 .seg { display: flex; gap: 4px; background: var(--panel2);
@@ -111,10 +115,15 @@ input[type=range] { flex: 1; accent-color: var(--accent); }
 button.primary {
   background: var(--accent); color: #1a1206; border: 0;
   padding: 11px; border-radius: 8px; font: inherit; font-size: 14px;
-  font-weight: 700; letter-spacing: 3px; cursor: pointer; margin-top: 4px;
+  font-weight: 700; letter-spacing: 3px; cursor: pointer;
+  flex: 1;
 }
 button.primary:hover { background: var(--accent2); }
 button.primary:disabled { background: var(--line); color: var(--dim2); cursor: wait; }
+
+/* 右栏顶部的操作条。右栏 sticky，所以按钮始终可见。 */
+.actionbar { display: flex; align-items: center; gap: 10px; }
+.actionbar .hint { margin: 0; flex: 0 0 auto; }
 button.ghost {
   background: var(--panel2); color: var(--dim); border: 1px solid var(--line);
   border-radius: 6px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer;

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Rebels Prompt Studio —— 本地提示词增强器后端。
+"""Weiless Prompt Studio —— 本地提示词增强器后端。
 
 独立网页工具，不依赖 ComfyUI。用 ComfyUI 整合包里的 python_embeded 跑，
 复用机器上已有的 GGUF，零新增下载。
@@ -89,7 +89,7 @@ def _print_banner():
     lines = [
         "",
         "=" * 62,
-        "  Rebels Prompt Studio",
+        "  Weiless Prompt Studio",
         "=" * 62,
         f"  风格维度   {styles_s['dimensions']} 维 / {styles_s['items']} 条",
         f"  场景预设   {presets_s['presets']} 个",
@@ -120,7 +120,7 @@ async def lifespan(_app):
     yield
 
 
-app = FastAPI(title="Rebels Prompt Studio", lifespan=lifespan)
+app = FastAPI(title="Weiless Prompt Studio", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -596,7 +596,7 @@ def main():
     import uvicorn
     import webbrowser
 
-    ap = argparse.ArgumentParser(description="Rebels Prompt Studio")
+    ap = argparse.ArgumentParser(description="Weiless Prompt Studio")
     ap.add_argument("--port", type=int, default=CONFIG["port"])
     ap.add_argument("--host", default=CONFIG["host"])
     ap.add_argument("--open", action="store_true", help="启动后自动打开浏览器")

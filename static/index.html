@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rebels Prompt Studio</title>
+<title>Weiless Prompt Studio</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
 <header class="topbar">
   <div class="brand">
     <span class="dot"></span>
-    <h1>Rebels Prompt Studio</h1>
+    <h1>Weiless Prompt Studio</h1>
     <span class="sub" id="counts"></span>
   </div>
   <div class="topright">
@@ -118,14 +118,18 @@
       </div>
     </div>
 
-    <button id="btnGo" class="primary">增 强</button>
-    <div class="row center">
-      <span class="hint" id="goHint"></span>
-    </div>
   </section>
 
   <!-- ================= 右栏 ================= -->
   <section class="col right">
+
+    <!-- 增强按钮放右栏顶部。
+         右栏是 sticky 定位，所以这个按钮永远在视口里，
+         不用像放在左栏底部那样每次滚到最下面才能按。 -->
+    <div class="actionbar">
+      <button id="btnGo" class="primary">增 强</button>
+      <span class="hint" id="goHint"></span>
+    </div>
 
     <div class="card grow">
       <div class="cardtitle">
