@@ -34,15 +34,34 @@ MODEL_FORMATS = [
     },
     {
         "id": "zimage",
-        "zh": "Z-Image / Lumina-2",
-        "en": "Z-Image / Lumina-2",
+        "zh": "Z-Image / Qwen-Image / Lumina-2",
+        "en": "Z-Image / Qwen-Image / Lumina-2",
         "family": "prose",
-        "encoder": "LLM 系（Qwen / Gemma 自回归模型）",
-        "note": "编码器本身就是语言模型，能吃复杂从句和属性绑定关系。",
+        "encoder": "Z-Image: Qwen3-4B　Qwen-Image: Qwen2.5-VL-7B　Lumina-2: Gemma-2-2B",
+        "note": "三个模型的编码器都是 LLM 系，提示词写法完全一样，所以合成一项。"
+                "都能吃长从句和空间关系描述；中文也吃得下。"
+                "要让图里出现文字，把原文用双引号括起来。",
         "inject": (
             "Write descriptive natural-language prose suitable for an LLM text encoder. "
-            "Complex sentences are fine. Be concrete and specific rather than ornate. "
-            "No tag syntax, no weights."
+            "Complex compositional sentences are fine — be specific about spatial "
+            "relationships, materials, and lighting rather than ornate. "
+            "If the image should contain readable text, put the exact wording in "
+            "double quotes. No tag syntax, no weights."
+        ),
+    },
+    {
+        "id": "qwen_image_edit",
+        "zh": "Qwen-Image-Edit（图生图 / 改图）",
+        "en": "Qwen-Image-Edit",
+        "family": "prose",
+        "encoder": "Qwen2.5-VL-7B（多模态 LLM）",
+        "note": "编辑类模型。描述改完之后画面是什么样，而不是描述修改动作。",
+        "inject": (
+            "Write an editing instruction for Qwen-Image-Edit. Describe the final "
+            "state of the image as it should look AFTER the edit — never describe "
+            "the editing process itself. Refer to things already in the picture as "
+            "'the ...' so it knows you mean the existing one. If text should appear, "
+            "put the exact wording in double quotes. No tag syntax, no weights."
         ),
     },
     {

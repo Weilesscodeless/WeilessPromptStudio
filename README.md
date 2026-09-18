@@ -183,7 +183,7 @@ RebelsPromptStudio/
 ├── catalog/
 │   ├── styles.py             7 维 198 条风格词条
 │   ├── presets.py            62 个场景预设
-│   ├── formats.py            10 种目标模型格式
+│   ├── formats.py            11 种目标模型格式
 │   ├── local.py              外挂库读取
 │   └── local_styles.json     导入产物（3755 条）
 ├── tools/
