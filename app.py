@@ -123,6 +123,28 @@ async def lifespan(_app):
 app = FastAPI(title="Rebels Prompt Studio", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def _no_cache_static(request, call_next):
+    """静态文件禁用浏览器缓存。
+
+    StaticFiles 只发 etag / last-modified，不发 Cache-Control。浏览器遇到
+    没有 Cache-Control 的响应会启用启发式缓存（一般取 Last-Modified 之后
+    经过时间的 10%），这期间**不重新验证**就直接用本地副本。
+
+    后果：代码改了、服务重启了，浏览器还在跑旧的 JS。表现是"改了没生效"
+    或者界面状态错乱——实测踩过一次，预设语言按钮的高亮和实际状态对不上，
+    排查了半天才发现是缓存而不是代码。
+
+    本地单用户工具，缓存收益为零，直接要求每次重新验证（仍保留 304，
+    不至于重复传输）。
+    """
+    resp = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return resp
+
+
 # ==========================================================================
 # 请求模型
 # ==========================================================================
