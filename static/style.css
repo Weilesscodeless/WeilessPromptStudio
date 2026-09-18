@@ -14,6 +14,8 @@
   --c-style: #9d8cf5;
   --c-added: #ff6b5e;
   --c-glue: #6b7280;
+  /* 译文：跟 input 同族但偏青，表示"意思来自你、字面是模型写的" */
+  --c-translated: #56c8e0;
 }
 
 * { box-sizing: border-box; }
@@ -187,6 +189,7 @@ details summary:hover { color: var(--dim); }
 .sp { border-radius: 3px; padding: 1px 0; }
 .sp.input { color: var(--c-input); }
 .sp.style { color: var(--c-style); }
+.sp.translated { color: var(--c-translated); }
 .sp.added { color: var(--c-added); background: rgba(255,107,94,.12); }
 .sp.glue  { color: var(--c-glue); }
 
@@ -198,6 +201,7 @@ details summary:hover { color: var(--dim); }
 .sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 .sw.input { background: var(--c-input); }
 .sw.style { background: var(--c-style); }
+.sw.translated { background: var(--c-translated); }
 .sw.added { background: var(--c-added); }
 .sw.glue  { background: var(--c-glue); }
 

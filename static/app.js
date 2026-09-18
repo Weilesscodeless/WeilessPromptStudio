@@ -111,7 +111,7 @@ function renderFormats() {
     sel.appendChild(o);
   });
   sel.value = S.format;
-  sel.onchange = () => { S.format = sel.value; };
+  sel.onchange = () => { S.format = sel.value; updateFormatHint(); updateBudget(); };
   updateFormatHint();
 }
 
@@ -119,7 +119,16 @@ function updateFormatHint() {
   const f = (S.meta.formats || []).find((x) => x.id === S.format);
   if (!f) return;
   const fam = { prose: "自然语言", tags: "标签+权重", booru: "booru 标签" }[f.family] || f.family;
-  $("formatHint").textContent = `编码器：${f.encoder}　语法族：${fam}　${f.note}`;
+  const langTag = f.lang === "en"
+    ? "⚠ 编码器只认英文"
+    : "支持中文";
+  $("formatHint").textContent =
+    `编码器：${f.encoder}　语法族：${fam}　${langTag}　${f.note}`;
+  // 选了只认英文的模型 + 输入里有中文 = 会自动翻译，提前告知
+  const hasCJK = /[一-鿿]/.test($("input").value);
+  if (f.lang === "en" && hasCJK && S.language === "auto") {
+    $("formatHint").textContent += "　→ 你输入了中文，将自动翻译成英文";
+  }
 }
 
 function renderStrengths() {
@@ -351,16 +360,23 @@ function updateBudget() {
   // 风格词数：维度词条的长度在服务端才知道，这里粗略估 6 词/条
   const styleN = Object.keys(S.styleIds).length * 6 + S.localPicks.size * 6;
   const base = Math.max(10, Math.min(150, Math.round(n * ratio)));
-  const budget = base + styleN;
+  // 有些格式天生要更多词（H3 要写声音、视频要写运动），服务端会加上这部分
+  const f = (S.meta.formats || []).find((x) => x.id === S.format);
+  const bonus = (f && f.budget_bonus) || 0;
+  const budget = base + styleN + bonus;
   $("budgetStat").textContent = n
-    ? `预算约 ${budget} 词（内容 ${base} + 风格约 ${styleN}）`
+    ? `预算约 ${budget} 词（内容 ${base} + 风格约 ${styleN}`
+      + (bonus ? ` + 格式 ${bonus}` : "") + "）"
     : "";
 }
 
 /* ---------------- 提交 ---------------- */
 
 function bindActions() {
-  $("input").addEventListener("input", () => { updateInputStat(); updateBudget(); });
+  // 输入变化时也要刷新格式提示——里面有"你输入了中文，将自动翻译"的判断
+  $("input").addEventListener("input", () => {
+    updateInputStat(); updateBudget(); updateFormatHint();
+  });
 
   $("btnClearStyles").onclick = () => {
     S.styleIds = {};
@@ -468,29 +484,46 @@ async function submit() {
 /* ---------------- 结果渲染 ---------------- */
 
 function showResult(d) {
+  const st = d.stats || {};
   const out = $("output");
   out.className = "output";
   out.innerHTML = "";
   out.dataset.plain = d.prompt;
 
+  const tips = {
+    added: "模型自行添加的内容",
+    input: "来自你的输入",
+    style: "来自你选中的风格",
+    translated: "从你的中文翻译过来（编码器只认英文）",
+  };
   (d.spans || []).forEach((s) => {
     const sp = el("span", "sp " + s.source, s.text);
-    if (s.source === "added") sp.title = "模型自行添加的内容";
-    if (s.source === "input") sp.title = "来自你的输入";
-    if (s.source === "style") sp.title = "来自你选中的风格";
+    if (tips[s.source]) sp.title = tips[s.source];
     out.appendChild(sp);
   });
   if (!d.spans || !d.spans.length) out.textContent = d.prompt;
 
+  // 没发生跨语种时，把译文图例收起来，免得干扰
+  const tl = $("legendTranslated");
+  if (tl) tl.style.display = st.cross_lang ? "" : "none";
+
   // 统计
-  const st = d.stats || {};
   const box = $("stats");
   box.innerHTML = "";
-  const pct = Math.round((st.retention || 0) * 100);
-  addStat(box, "原话保留", pct + "%",
-    pct >= 90 ? "good" : pct >= 60 ? "" : "bad");
-  addStat(box, "模型自加", st.added_words + " 词",
-    st.added_words === 0 ? "good" : st.added_words > 20 ? "bad" : "");
+
+  if (st.cross_lang) {
+    // 跨语种时保留率没有意义（译文和原文天然对不上），显示译文词数代替
+    addStat(box, "输入语种", { zh: "中文", en: "英文", mixed: "中英混合" }[st.in_lang] || "—");
+    addStat(box, "译文", st.translated_words + " 词");
+    addStat(box, "模型自加", st.added_words + " 词",
+      st.added_words === 0 ? "good" : st.added_words > 20 ? "bad" : "");
+  } else {
+    const pct = st.retention == null ? null : Math.round(st.retention * 100);
+    addStat(box, "原话保留", pct == null ? "—" : pct + "%",
+      pct == null ? "" : pct >= 90 ? "good" : pct >= 60 ? "" : "bad");
+    addStat(box, "模型自加", st.added_words + " 词",
+      st.added_words === 0 ? "good" : st.added_words > 20 ? "bad" : "");
+  }
   addStat(box, "输出长度", `${st.output_words} / ${st.budget} 词`,
     st.over_budget ? "bad" : "good");
   addStat(box, "耗时", d.elapsed + " s");

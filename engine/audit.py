@@ -19,6 +19,13 @@
 
 import re
 
+from engine.prompt import detect_language
+
+# 跨语言场景的标记。用户输入中文、目标编码器只认英文时，工具会翻译，
+# 这时词表比对完全失效：译文的每个词都和原文对不上，全部会被判成
+# "模型自加"，是彻底的假警报。所以单独标一类，并关掉保留率指标。
+TRANSLATED = "translated"
+
 # 语法连接词。这些词本身不携带内容，标成 added 只会制造噪声，
 # 所以单独归类，渲染时用中性色。
 GLUE = {
@@ -90,6 +97,12 @@ def audit(output, user_input, style_texts, budget=None):
     in_vocab = _vocab([user_input])
     st_vocab = _vocab(style_texts)
 
+    # 输入输出是否跨语种。跨了就不做词级溯源——译文的词和原文天然对不上，
+    # 硬比对只会把每个译词报成"模型自加"。
+    in_lang = detect_language(user_input)
+    out_lang = detect_language(output)
+    cross_lang = {in_lang, out_lang} in ({"zh", "en"}, {"zh", "mixed"}, {"mixed", "en"})
+
     toks = _tokens(output)
     if not toks:
         return [], {
@@ -111,10 +124,14 @@ def audit(output, user_input, style_texts, budget=None):
         # 中文单字在 GLUE 里没意义（中文没有英文冠词），所以只对英文查
         if not _is_cjk(w) and low in GLUE:
             labels.append("glue")
-        elif stem in in_vocab:
-            labels.append("input")
         elif stem in st_vocab:
             labels.append("style")
+        elif cross_lang:
+            # 跨语种时不判定，归给"译文"。这不是"模型自加"——
+            # 它只是把用户的话译过来了，报成自加会吓到人。
+            labels.append(TRANSLATED)
+        elif stem in in_vocab:
+            labels.append("input")
         else:
             labels.append("added")
 
@@ -165,19 +182,27 @@ def audit(output, user_input, style_texts, budget=None):
     content_labels = [l for l in labels if l != "glue"]
     added_words = sum(1 for l in content_labels if l == "added")
     style_words = sum(1 for l in content_labels if l == "style")
-    input_words_out = sum(1 for l in content_labels if l == "input")
 
-    # 原话保留率：输入里的实词有多少进了输出
+    out_words = sum(1 for l in labels if l != "glue")
+
+    # 原话保留率：输入里的实词有多少进了输出。
+    # 只在同语种时有意义——跨语种时译文的词和原文天然对不上，
+    # 算出来必然接近 0，那是个假数字，不如不给。
     in_tokens = _tokens(user_input)
     in_content = {stem for _, _, w, stem in in_tokens
                   if not (_is_cjk(w) is False and w.lower() in GLUE)}
-    out_vocab_all = {stem for _, _, _, stem in toks}
-    kept = in_content & out_vocab_all
-    retention = (len(kept) / len(in_content)) if in_content else 1.0
 
-    missing = sorted(in_content - kept)
-
-    out_words = sum(1 for l in labels if l != "glue")
+    if cross_lang:
+        retention = None
+        kept = set()
+        missing = []
+        translated_words = sum(1 for l in content_labels if l == TRANSLATED)
+    else:
+        out_vocab_all = {stem for _, _, _, stem in toks}
+        kept = in_content & out_vocab_all
+        retention = (len(kept) / len(in_content)) if in_content else 1.0
+        missing = sorted(in_content - kept)
+        translated_words = 0
 
     stats = {
         "output_words": out_words,
@@ -185,9 +210,13 @@ def audit(output, user_input, style_texts, budget=None):
         "over_budget": bool(budget and out_words > budget),
         "input_words": len(in_content),
         "input_kept": len(kept),
-        "retention": round(retention, 3),
+        "retention": round(retention, 3) if retention is not None else None,
         "added_words": added_words,
         "style_words": style_words,
+        "translated_words": translated_words,
+        "cross_lang": cross_lang,
+        "in_lang": in_lang,
+        "out_lang": out_lang,
         "glue_words": len(labels) - len(content_labels),
         "span_rebuild_failed": span_rebuild_failed,
     }
@@ -197,20 +226,31 @@ def audit(output, user_input, style_texts, budget=None):
 def summarize(spans, stats):
     """给界面用的一句话结论。"""
     bits = []
-    r = stats.get("retention")
-    if r is not None:
-        pct = int(round(r * 100))
-        if pct >= 90:
-            bits.append(f"原话保留 {pct}%，几乎没有丢失")
-        elif pct >= 60:
-            bits.append(f"原话保留 {pct}%，有部分改写")
-        else:
-            bits.append(f"原话仅保留 {pct}%，偏离较多")
-    a = stats.get("added_words", 0)
-    if a == 0:
-        bits.append("模型没有自行添加任何内容")
+
+    if stats.get("cross_lang"):
+        src = {"zh": "中文", "en": "英文", "mixed": "中英混合"}.get(
+            stats.get("in_lang"), "其他语言")
+        bits.append(
+            f"你输入的是{src}，该模型的编码器只认英文，已自动翻译"
+        )
+        bits.append("跨语言无法做词级比对，所以不报原话保留率")
     else:
-        bits.append(f"模型自行添加了 {a} 个词")
+        r = stats.get("retention")
+        if r is not None:
+            pct = int(round(r * 100))
+            if pct >= 90:
+                bits.append(f"原话保留 {pct}%，几乎没有丢失")
+            elif pct >= 60:
+                bits.append(f"原话保留 {pct}%，有部分改写")
+            else:
+                bits.append(f"原话仅保留 {pct}%，偏离较多")
+
+        a = stats.get("added_words", 0)
+        if a == 0:
+            bits.append("模型没有自行添加任何内容")
+        else:
+            bits.append(f"模型自行添加了 {a} 个词")
+
     if stats.get("over_budget"):
         bits.append(f"超出预算（{stats['output_words']}/{stats['budget']} 词）")
     return "；".join(bits)

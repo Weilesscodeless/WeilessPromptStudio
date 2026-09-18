@@ -88,11 +88,64 @@ MIN_BUDGET = 10
 MAX_BUDGET = 150
 
 LANGUAGES = {
-    "auto": ("跟随输入", "Write your output in the same language as the user's message."),
+    "auto": ("自动（按模型）", "Write your output in the same language as the user's message."),
     "en": ("强制英文", "Write your output in English regardless of the input language."),
     "zh": ("强制中文", "Write your output in Chinese regardless of the input language."),
 }
 DEFAULT_LANGUAGE = "auto"
+
+_CJK_RE = re.compile(r"[一-鿿]")
+_LATIN_RE = re.compile(r"[A-Za-z]")
+
+
+def detect_language(text):
+    """判断文本语种。只区分中/英/混合，够用了。"""
+    if not text:
+        return "unknown"
+    cjk = len(_CJK_RE.findall(text))
+    latin = len(_LATIN_RE.findall(text))
+    if cjk == 0 and latin == 0:
+        return "unknown"
+    if cjk == 0:
+        return "en"
+    if latin == 0:
+        return "zh"
+    # 哪个占多数算哪个（中文一个字信息量大，所以给个偏置）
+    return "zh" if cjk * 2 >= latin else "en"
+
+
+def resolve_language(requested, format_id, input_text):
+    """决定实际输出语言。
+
+    这是"适配不支持中文的模型"的核心。
+
+    有些编码器只认英文：CLIP（SD1.5/SDXL/Pony）、T5-XXL（Flux/LTX/HiDream）
+    都是在英文语料上训的，喂中文等于喂噪声——不是效果差一点，是几乎不生效。
+    用户用中文写提示词、又选了这类模型时，工具必须自动改成英文，
+    并且在提示词里明确要求"翻译"，而不能只说"用英文写"。
+
+    只写"Write in English"不够：模型常会把中文原样留着再补几句英文。
+    必须点明"把含义翻译过去，不要保留任何非英文字"。
+
+    format 的 lang 字段标了编码器能力：en 只认英文，multi 支持中文。
+    """
+    f = fmt_mod.get(format_id)
+    cap = f.get("lang", "en")
+    in_lang = detect_language(input_text)
+
+    if requested == "en":
+        return "en", in_lang, False
+    if requested == "zh":
+        # 用户明确要中文，即使编码器不吃也照办（可能只是拿去做别的用途），
+        # 但要标记出来供上层提示风险。
+        return "zh", in_lang, False
+    # auto：跟随编码器能力
+    if cap == "en":
+        if in_lang in ("zh", "mixed"):
+            # 需要翻译
+            return "en", in_lang, True
+        return "en", in_lang, False
+    return "auto", in_lang, False
 
 
 def count_words(text):
@@ -120,9 +173,16 @@ def compute_budget(input_text, strength, style_texts=None, format_id=None):
     n = count_words(input_text)
     base = MIN_BUDGET if n == 0 else max(MIN_BUDGET, min(MAX_BUDGET, int(round(n * ratio))))
     style_words = sum(count_words(t) for t in (style_texts or []))
+
     overhead = 0
-    if format_id and fmt_mod.get(format_id)["family"] == "booru":
-        overhead = BOORU_OVERHEAD
+    if format_id:
+        f = fmt_mod.get(format_id)
+        if f["family"] == "booru":
+            overhead += BOORU_OVERHEAD
+        # 有些格式天生要更多词：H3 要同时描述画面和声音，视频类要写运动。
+        # 不加这部分的话，这些格式每次都会误报超长。
+        overhead += f.get("budget_bonus", 0)
+
     return base + style_words + overhead
 
 
@@ -197,6 +257,16 @@ _SLOT_MODE_STYLE = """Style directives to place in the "style" field:
 
 {items}"""
 
+# 翻译场景专用。只写 "Write in English" 不够——模型会把中文原样留着
+# 再补几句英文，结果送进只认英文的编码器还是噪声。必须点明"不要保留
+# 任何非英文字符"。
+_TRANSLATE_RULE = """TRANSLATION — the user wrote in {src}, your output must be English:
+
+Translate the MEANING of the user's message into English. Do NOT leave any \
+non-English characters in your output — not the user's original words, not \
+names, nothing. The style words listed below are already English; use them as \
+written. Every concept from the user's message must survive the translation."""
+
 
 def _style_block(style_texts):
     if not style_texts:
@@ -213,7 +283,13 @@ def build_system_prompt(mode, format_id, style_texts, strength,
     """
     f = fmt_mod.get(format_id)
     strength_cfg = STRENGTHS.get(strength, STRENGTHS[DEFAULT_STRENGTH])
-    lang_label, lang_rule = LANGUAGES.get(language, LANGUAGES[DEFAULT_LANGUAGE])
+
+    # 语言按编码器能力解析。选到只认英文的模型而输入是中文时，
+    # 这里会转成强制英文 + 翻译指令——见 resolve_language 的说明。
+    eff_lang, in_lang, translating = resolve_language(language, format_id, input_text)
+    lang_rule = LANGUAGES.get(eff_lang, LANGUAGES[DEFAULT_LANGUAGE])[1]
+    if translating:
+        lang_rule = _TRANSLATE_RULE.format(src="Chinese" if in_lang == "zh" else "a mix of Chinese and English")
 
     parts = []
 

@@ -20,6 +20,8 @@ family 字段用于精确模式（槽位填充）挑选拼装模板：
 MODEL_FORMATS = [
     {
         "id": "flux",
+        "budget_bonus": 0,
+        "lang": "en",
         "zh": "Flux / Chroma",
         "en": "Flux / Chroma",
         "family": "prose",
@@ -34,6 +36,8 @@ MODEL_FORMATS = [
     },
     {
         "id": "zimage",
+        "budget_bonus": 0,
+        "lang": "multi",
         "zh": "Z-Image / Qwen-Image / Lumina-2",
         "en": "Z-Image / Qwen-Image / Lumina-2",
         "family": "prose",
@@ -51,6 +55,8 @@ MODEL_FORMATS = [
     },
     {
         "id": "qwen_image_edit",
+        "budget_bonus": 0,
+        "lang": "multi",
         "zh": "Qwen-Image-Edit（图生图 / 改图）",
         "en": "Qwen-Image-Edit",
         "family": "prose",
@@ -66,6 +72,8 @@ MODEL_FORMATS = [
     },
     {
         "id": "hidream",
+        "budget_bonus": 0,
+        "lang": "en",
         "zh": "HiDream",
         "en": "HiDream",
         "family": "prose",
@@ -79,6 +87,8 @@ MODEL_FORMATS = [
     },
     {
         "id": "sdxl",
+        "budget_bonus": 0,
+        "lang": "en",
         "zh": "SDXL",
         "en": "SDXL",
         "family": "tags",
@@ -92,6 +102,8 @@ MODEL_FORMATS = [
     },
     {
         "id": "sd15",
+        "budget_bonus": 0,
+        "lang": "en",
         "zh": "SD 1.5",
         "en": "SD 1.5",
         "family": "tags",
@@ -105,6 +117,8 @@ MODEL_FORMATS = [
     },
     {
         "id": "pony",
+        "budget_bonus": 0,
+        "lang": "en",
         "zh": "Pony / Illustrious",
         "en": "Pony / Illustrious",
         "family": "booru",
@@ -122,6 +136,8 @@ MODEL_FORMATS = [
     },
     {
         "id": "ltx",
+        "budget_bonus": 10,
+        "lang": "en",
         "zh": "LTX Video",
         "en": "LTX Video",
         "family": "prose",
@@ -135,6 +151,8 @@ MODEL_FORMATS = [
     },
     {
         "id": "hunyuan_wan",
+        "budget_bonus": 10,
+        "lang": "multi",
         "zh": "Hunyuan / Wan Video",
         "en": "Hunyuan / Wan Video",
         "family": "prose",
@@ -148,6 +166,8 @@ MODEL_FORMATS = [
     },
     {
         "id": "minimax_h3",
+        "budget_bonus": 25,
+        "lang": "multi",
         "zh": "MiniMax H3（海螺）",
         "en": "MiniMax H3",
         "family": "prose",
@@ -155,14 +175,18 @@ MODEL_FORMATS = [
         "note": "全模态：一次生成视频 + 原生立体声。需要同时描述画面和声音。",
         "inject": (
             "Write a single flowing natural-language description for MiniMax H3. "
-            "H3 generates video and synchronized audio in one pass, so describe both "
-            "the visuals and the soundscape — dialogue, ambient sound, foley, music — "
-            "but only if the input implies them. "
+            "H3 generates video and synchronized audio in one pass. "
+            "Describe sound ONLY when the user's message implies it — a sound they "
+            "mentioned, speech, music, or an action that obviously makes noise. "
+            "Do NOT invent a soundscape the user did not ask for. Silence is a "
+            "valid answer and is better than guessing. "
             "Use coherent sentences with explicit temporal flow. No tag syntax, no weights."
         ),
     },
     {
         "id": "universal",
+        "budget_bonus": 0,
+        "lang": "multi",
         "zh": "通用自然语言",
         "en": "Universal natural language",
         "family": "prose",
@@ -192,6 +216,8 @@ def catalog():
             "zh": f["zh"],
             "en": f["en"],
             "family": f["family"],
+            "lang": f["lang"],
+            "budget_bonus": f["budget_bonus"],
             "encoder": f["encoder"],
             "note": f["note"],
         }

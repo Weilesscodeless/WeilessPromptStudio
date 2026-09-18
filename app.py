@@ -297,6 +297,19 @@ def api_enhance(req: EnhanceRequest):
         language=req.language,
     )
 
+    warnings = []
+
+    # 语言适配提示。用户在界面上显式选了中文、而目标编码器只认英文时，
+    # 尊重他的选择但不假装能生效。
+    fmt_entry = formats_mod.get(req.format)
+    eff_lang, in_lang, translating = prompt_mod.resolve_language(
+        req.language, req.format, user_input)
+    if req.language == "zh" and fmt_entry["lang"] == "en":
+        warnings.append(
+            f"{fmt_entry['zh']} 的编码器（{fmt_entry['encoder']}）只认英文，"
+            "输出中文基本不会生效，建议改回「自动」"
+        )
+
     budget = prompt_mod.compute_budget(user_input, req.strength, style_texts, req.format)
     max_tokens = req.max_tokens or CONFIG["max_tokens"]
     temperature = req.temperature if req.temperature is not None else CONFIG["temperature"]
@@ -315,7 +328,6 @@ def api_enhance(req: EnhanceRequest):
     except Exception as e:
         raise HTTPException(500, f"模型调用失败: {type(e).__name__}: {e}")
 
-    warnings = []
     slots = None
 
     if req.mode == "slots":
@@ -354,7 +366,11 @@ def api_enhance(req: EnhanceRequest):
     # 已经写了 SURVIVAL RULE，但模型的遵守是概率性的，所以这里在程序侧
     # 再兜一道：检测到原话大量丢失就重试一次，并在提示词末尾点名。
     # 只重试一次，避免在模型不稳定时反复烧时间。
-    if req.mode != "slots" and stats["input_words"] >= 2 and stats["retention"] < 0.4:
+    # 保留率在跨语种时是 None（译文和原文对不上，算不出有意义的数字），
+    # 所以必须先判 None 再比大小。
+    if (req.mode != "slots" and not stats.get("cross_lang")
+            and stats["retention"] is not None
+            and stats["input_words"] >= 2 and stats["retention"] < 0.4):
         retry_sys = system_prompt + (
             "\n\nREMINDER — your previous attempt dropped the user's own words. "
             f"The user's message was: {user_input}. "
@@ -391,7 +407,8 @@ def api_enhance(req: EnhanceRequest):
         warnings.append(
             f"超出长度预算 {stats['output_words'] - budget} 词，可降低强度或减少风格选择"
         )
-    if stats["retention"] < 0.6 and stats["input_words"] >= 2:
+    if (stats["retention"] is not None and stats["retention"] < 0.6
+            and stats["input_words"] >= 2):
         warnings.append(f"原话保留率偏低（{int(stats['retention']*100)}%），模型改写了较多内容")
 
     # 溯源片段拼不回原文时说明分色逻辑出了问题，这时界面上的文字会错乱。
@@ -435,9 +452,14 @@ def api_enhance(req: EnhanceRequest):
         "warnings": warnings,
         "elapsed": result["elapsed"],
     })
+    # 保留率可能是 None（跨语种时算不出），日志不能直接乘 100
+    if stats["retention"] is None:
+        keep = f"译文{stats['translated_words']}词"
+    else:
+        keep = f"保留{int(stats['retention'] * 100)}%"
     print(
         f"[{time.strftime('%H:%M:%S')}] {req.mode}/{req.strength} "
-        f"{stats['output_words']}/{budget}词 保留{int(stats['retention']*100)}% "
+        f"{stats['output_words']}/{budget}词 {keep} "
         f"自加{stats['added_words']} {result['elapsed']}s",
         flush=True,
     )
