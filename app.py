@@ -188,6 +188,60 @@ def pick_model(req_path):
 
 
 # ==========================================================================
+# 请求日志
+#
+# 之前后端没记任何请求，用户报告"输出里词叠在一起"时手上零线索，
+# 只能靠猜着复现。这个日志就是为了不再发生那种情况：
+# 每次增强的输入、风格、拼装出的 system prompt、模型原始输出、
+# 最终结果和溯源片段全部落盘，事后能一字不差地重放。
+# ==========================================================================
+
+LOG_DIR = os.path.join(ROOT, "logs")
+LOG_PATH = os.path.join(LOG_DIR, "enhance.jsonl")
+LOG_BACKUP = LOG_PATH + ".1"
+MAX_LOG_BYTES = 8 * 1024 * 1024
+
+
+def _log_enhance(entry):
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        if os.path.isfile(LOG_PATH) and os.path.getsize(LOG_PATH) > MAX_LOG_BYTES:
+            try:
+                if os.path.isfile(LOG_BACKUP):
+                    os.remove(LOG_BACKUP)
+                os.replace(LOG_PATH, LOG_BACKUP)
+            except Exception:
+                pass
+        entry["ts"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _read_log(limit=20):
+    """读最近 N 条记录，新的在前。"""
+    if not os.path.isfile(LOG_PATH):
+        return []
+    try:
+        with open(LOG_PATH, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        return []
+    out = []
+    for line in lines[-limit:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except Exception:
+            pass
+    out.reverse()
+    return out
+
+
+# ==========================================================================
 # 接口
 # ==========================================================================
 
@@ -340,7 +394,12 @@ def api_enhance(req: EnhanceRequest):
     if stats["retention"] < 0.6 and stats["input_words"] >= 2:
         warnings.append(f"原话保留率偏低（{int(stats['retention']*100)}%），模型改写了较多内容")
 
-    return {
+    # 溯源片段拼不回原文时说明分色逻辑出了问题，这时界面上的文字会错乱。
+    # 后端已经降级成不分色保证文字正确，但要让用户知道分色不可信。
+    if stats.get("span_rebuild_failed"):
+        warnings.append("溯源分色不可用（片段无法还原原文），已关闭分色以保证文字正确")
+
+    result = {
         "prompt": final,
         "spans": spans,
         "stats": stats,
@@ -359,6 +418,30 @@ def api_enhance(req: EnhanceRequest):
             "llm": llm_diag,
         },
     }
+
+    _log_enhance({
+        "request": {
+            "input": user_input, "mode": req.mode, "format": req.format,
+            "strength": req.strength, "language": req.language,
+            "style_ids": req.style_ids, "local_picks": req.local_picks,
+            "temperature": temperature, "model": os.path.basename(model_path),
+        },
+        "style_texts": style_texts,
+        "system_prompt": system_prompt,
+        "raw_output": clean_diag.get("raw", raw_text),
+        "final": final,
+        "spans": spans,
+        "stats": stats,
+        "warnings": warnings,
+        "elapsed": result["elapsed"],
+    })
+    print(
+        f"[{time.strftime('%H:%M:%S')}] {req.mode}/{req.strength} "
+        f"{stats['output_words']}/{budget}词 保留{int(stats['retention']*100)}% "
+        f"自加{stats['added_words']} {result['elapsed']}s",
+        flush=True,
+    )
+    return result
 
 
 @app.post("/api/unload")
@@ -380,6 +463,15 @@ def api_preload(req: ModelRequest):
 @app.get("/api/status")
 def api_status():
     return ENGINE.status()
+
+
+@app.get("/api/logs")
+def api_logs(limit: int = 20):
+    """最近几次增强的完整记录。出问题时看这个，不用靠复现。"""
+    return {
+        "path": LOG_PATH,
+        "entries": _read_log(limit),
+    }
 
 
 # ==========================================================================

@@ -129,24 +129,37 @@ def audit(output, user_input, style_texts, budget=None):
             labels[i] = prev
 
     # --- 合并连续同类，保留原始文本（含标点空格） ---
+    #
+    # 片段覆盖的范围是「从本词的起点，到下一个词的起点」——不是「本词的起点到终点」。
+    #
+    # 这个区别是要紧的：前端把每个片段渲染成独立的 <span>，片段之间不属于任何
+    # 片段的字符会被直接丢掉。按 [start, end) 切的话，词与词之间的空格和逗号
+    # 正好落在空隙里，界面上 "forest, featuring" 会显示成 "forestfeaturing"，
+    # "A still" 显示成 "Astill"。把它一路铺到下一个词的起点，空隙就有了归属
+    # （归给前一个词），显示才和原始字符串一致。
     spans = []
+    n = len(toks)
     for idx, (start, end, w, _) in enumerate(toks):
         lab = labels[idx]
+        seg_start = 0 if idx == 0 else start
+        seg_end = toks[idx + 1][0] if idx + 1 < n else len(output)
         if spans and spans[-1]["source"] == lab:
-            spans[-1]["text"] = output[spans[-1]["_start"]:end]
-            spans[-1]["_end"] = end
+            spans[-1]["_end"] = seg_end
         else:
-            spans.append({
-                "text": output[start:end],
-                "source": lab,
-                "_start": start,
-                "_end": end,
-            })
+            spans.append({"source": lab, "_start": seg_start, "_end": seg_end})
 
-    # 把尾部标点并进前一个片段，免得 "cat" 后面孤零零一个逗号
     for s in spans:
+        s["text"] = output[s["_start"]:s["_end"]]
         s.pop("_start", None)
         s.pop("_end", None)
+
+    # 自检：拼回来的文本必须和原文完全一致。
+    # 这条不变量一旦破坏，界面上就会出现词被粘在一起的问题，
+    # 所以在这里直接兜住，而不是等用户看出来。
+    span_rebuild_failed = False
+    if "".join(s["text"] for s in spans) != output:
+        span_rebuild_failed = True
+        spans = [{"text": output, "source": "glue"}]
 
     # --- 统计 ---
     content_labels = [l for l in labels if l != "glue"]
@@ -176,6 +189,7 @@ def audit(output, user_input, style_texts, budget=None):
         "added_words": added_words,
         "style_words": style_words,
         "glue_words": len(labels) - len(content_labels),
+        "span_rebuild_failed": span_rebuild_failed,
     }
     return spans, stats, missing
 
