@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rebels Prompt Studio</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="dot"></span>
+    <h1>Rebels Prompt Studio</h1>
+    <span class="sub" id="counts"></span>
+  </div>
+  <div class="topright">
+    <label class="inline">
+      <span>模型</span>
+      <select id="modelSelect"></select>
+    </label>
+    <div class="vram" id="vramBox" title="显存占用">—</div>
+    <button id="btnLoad" class="ghost" title="把模型预先读进显存，第一次生成就不用等加载">预加载</button>
+    <button id="btnUnload" class="ghost" title="卸载模型，把显存让给 ComfyUI">卸载</button>
+  </div>
+</header>
+
+<main>
+  <!-- ================= 左栏 ================= -->
+  <section class="col left">
+
+    <div class="card">
+      <label class="cardtitle" for="input">你的提示词</label>
+      <textarea id="input" rows="3"
+        placeholder="写主体就行，风格用下面的预设点选，不用重复打字。&#10;例：cyberpunk girl by the window"></textarea>
+      <div class="row space">
+        <span class="hint" id="inputStat">—</span>
+        <span class="hint" id="budgetStat"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="cardtitle">增强设置</div>
+
+      <div class="field">
+        <span class="lbl">模式</span>
+        <div class="seg" id="modeSeg">
+          <button data-v="free" class="on">自由改写</button>
+          <button data-v="slots">精确槽位</button>
+        </div>
+      </div>
+      <p class="hint" id="modeHint">模型自由重写，但受来源规则和长度预算双重约束。</p>
+
+      <div class="field">
+        <span class="lbl">强度</span>
+        <div class="seg" id="strengthSeg"></div>
+      </div>
+      <p class="hint" id="strengthHint"></p>
+
+      <div class="field">
+        <span class="lbl">目标模型</span>
+        <select id="formatSelect"></select>
+      </div>
+      <p class="hint" id="formatHint"></p>
+
+      <div class="field">
+        <span class="lbl">输出语言</span>
+        <div class="seg" id="langSeg"></div>
+      </div>
+
+      <details class="adv">
+        <summary>高级</summary>
+        <div class="field">
+          <span class="lbl">附加指令</span>
+          <input id="extra" type="text" placeholder="可选，会作为附加风格一起送进模型">
+        </div>
+        <div class="field">
+          <span class="lbl">温度</span>
+          <input id="temp" type="range" min="0" max="1.5" step="0.05" value="0.7">
+          <span class="val" id="tempVal">0.70</span>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <div class="cardtitle">风格维度 <span class="hint inline-hint">198 条</span></div>
+      <div id="dimensions"></div>
+      <button id="btnClearStyles" class="ghost small">清空风格</button>
+    </div>
+
+    <div class="card">
+      <div class="cardtitle">场景预设 <span class="hint inline-hint">62 个 · 一键套用</span></div>
+      <div class="tabs" id="presetTabs"></div>
+      <div class="presetgrid" id="presetGrid"></div>
+    </div>
+
+    <div class="card">
+      <div class="cardtitle">
+        外挂风格库
+        <span class="hint inline-hint" id="localCount"></span>
+      </div>
+      <input id="localSearch" type="text" placeholder="搜索风格名…（如 电影 / 油画 / film）">
+      <div class="tabs" id="localTabs"></div>
+      <div class="locallist" id="localList"></div>
+      <div class="row space">
+        <span class="hint">已选 <b id="localPickedCount">0</b> 条</span>
+        <button id="btnClearLocal" class="ghost small">清空</button>
+      </div>
+    </div>
+
+    <button id="btnGo" class="primary">增 强</button>
+    <div class="row center">
+      <span class="hint" id="goHint"></span>
+    </div>
+  </section>
+
+  <!-- ================= 右栏 ================= -->
+  <section class="col right">
+
+    <div class="card grow">
+      <div class="cardtitle">
+        结果
+        <div class="row gap">
+          <button id="btnCopy" class="ghost small">复制</button>
+        </div>
+      </div>
+      <div id="output" class="output empty">增强结果会显示在这里</div>
+
+      <div class="legend" id="legend">
+        <span><i class="sw input"></i>你的输入</span>
+        <span><i class="sw style"></i>你选的风格</span>
+        <span><i class="sw added"></i>模型自加</span>
+        <span><i class="sw glue"></i>语法词</span>
+      </div>
+
+      <div class="stats" id="stats"></div>
+      <div class="summary" id="summary"></div>
+      <div class="warnings" id="warnings"></div>
+    </div>
+
+    <div class="card">
+      <div class="cardtitle">诊断</div>
+      <div class="diagline" id="diagLine">—</div>
+      <details><summary>系统提示词（送进模型的原样）</summary>
+        <pre id="dSys"></pre></details>
+      <details><summary>模型原始输出（未经清洗）</summary>
+        <pre id="dRaw"></pre></details>
+      <details><summary>清洗步骤</summary>
+        <pre id="dClean"></pre></details>
+      <details><summary>槽位解析结果（仅槽位模式）</summary>
+        <pre id="dSlots"></pre></details>
+    </div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
